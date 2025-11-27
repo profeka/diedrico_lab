@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Grid, ChevronLeft, ChevronRight, MousePointer2, Pause, Play, Info, CheckCircle2, RefreshCw, PencilRuler, Eye, Edit3, Camera, Download, Image as ImageIcon, Eraser, User, Clipboard, Lock, Unlock } from 'lucide-react';
+import { Grid, ChevronLeft, ChevronRight, MousePointer2, Pause, Play, Info, CheckCircle2, RefreshCw, PencilRuler, Eye, Edit3, Camera, Download, Image as ImageIcon, Eraser, User, Clipboard, Lock, Unlock, Box, Triangle, Upload } from 'lucide-react';
 import VoxelViewer from './components/VoxelViewer';
 import ProjectionGrid from './components/ProjectionGrid';
 import html2canvas from 'html2canvas';
@@ -25,12 +25,21 @@ function App() {
     const [checkResult, setCheckResult] = useState<'success' | 'error' | null>(null);
     const [studentName, setStudentName] = useState('');
     const [completedLevels, setCompletedLevels] = useState<number[]>([]);
+    
+    // Progress Modal State
     const [showProgressModal, setShowProgressModal] = useState(false);
     const [progressCode, setProgressCode] = useState('');
+    const [loadCode, setLoadCode] = useState(''); // State for loading code
+    
+    // Verifier State
     const [verifyCode, setVerifyCode] = useState('');
     const [verifyResult, setVerifyResult] = useState<null | {name: string, completed: number[], date: string}>(null);
+    
     const [synthResolution, setSynthResolution] = useState(4);
     const [removedVoxels, setRemovedVoxels] = useState<Set<string>>(new Set());
+    
+    // TOOL STATE
+    const [tool, setTool] = useState<'cube' | 'triangle'>('cube');
 
     const activeResolution = mode === 'analysis' ? getLevelResolution(currentLevel) : synthResolution;
 
@@ -99,26 +108,33 @@ function App() {
     }, [currentLevel]);
 
     const handleCellClick = (view: keyof Projections, idx: number, forcedValue?: number) => {
-        if (mode === 'analysis') {
-            if (checkResult === 'success') return;
-            if (checkResult === 'error') setCheckResult(null); 
-            setUserAnalysisGrids(prev => {
-                const viewData = { ...prev[view] };
-                viewData.cells = [...viewData.cells];
-                // Toggle 0 <-> 1 for analysis
-                const next = viewData.cells[idx] === 0 ? 1 : 0;
-                viewData.cells[idx] = forcedValue !== undefined ? forcedValue : next;
-                return { ...prev, [view]: viewData };
-            });
-        } else {
-            setUserSynthesisGrids(prev => {
-                const viewData = { ...prev[view] };
-                viewData.cells = [...viewData.cells];
-                // Use passed value (from ProjectionGrid logic) or toggle logic if needed
-                viewData.cells[idx] = forcedValue !== undefined ? forcedValue : (viewData.cells[idx] === 0 ? 1 : 0);
-                return { ...prev, [view]: viewData };
-            });
-        }
+        if (checkResult === 'success') return;
+        if (checkResult === 'error') setCheckResult(null); 
+
+        const updateGrid = (prev: Projections) => {
+            const viewData = { ...prev[view] };
+            viewData.cells = [...viewData.cells];
+            
+            if (forcedValue !== undefined) {
+                viewData.cells[idx] = forcedValue;
+            } else {
+                // Tool Logic
+                const current = viewData.cells[idx];
+                let next = 0;
+                if (tool === 'cube') {
+                    next = current === 0 ? 1 : 0;
+                } else {
+                    if (current < 2) next = 2;
+                    else if (current < 5) next = current + 1;
+                    else next = 2;
+                }
+                viewData.cells[idx] = next;
+            }
+            return { ...prev, [view]: viewData };
+        };
+
+        if (mode === 'analysis') setUserAnalysisGrids(prev => updateGrid(prev));
+        else setUserSynthesisGrids(prev => updateGrid(prev));
     };
 
     const handleEdgeClick = (view: keyof Projections, type: 'v' | 'h', idx: number) => {
@@ -186,6 +202,26 @@ function App() {
         setShowProgressModal(true);
     };
 
+    const handleLoadProgress = () => {
+        if (!loadCode.trim()) return;
+        try {
+            const raw = loadCode.trim().replace('DIEDRICO-LAB-V1_', '');
+            const json = atob(raw);
+            const data = JSON.parse(json);
+            
+            if (Array.isArray(data.c)) {
+                if(data.n) setStudentName(data.n);
+                setCompletedLevels(data.c);
+                alert(`¡Progreso cargado con éxito! ${data.c.length} niveles completados.`);
+                setLoadCode('');
+            } else {
+                alert("El código no es válido.");
+            }
+        } catch (e) {
+            alert("Error al leer el código. Asegúrate de copiarlo completo.");
+        }
+    };
+
     const verifyProgressCode = () => {
         try {
             const data = JSON.parse(atob(verifyCode.replace('DIEDRICO-LAB-V1_', '')));
@@ -232,7 +268,7 @@ function App() {
                     <div className="bg-black text-white p-2"><Grid size={28}/></div>
                     <div>
                         <h1 className="text-2xl font-black uppercase leading-none tracking-tight">Diédrico_Lab</h1>
-                        <p className="text-xs font-bold text-gray-500">v9.2 // {mode === 'analysis' ? 'ANALYSIS' : 'CONSTRUCTOR'}_MODE</p>
+                        <p className="text-xs font-bold text-gray-500">v9.5 // {mode === 'analysis' ? 'ANALYSIS' : 'CONSTRUCTOR'}_MODE</p>
                     </div>
                 </div>
                 <div className="flex gap-4 items-center">
@@ -285,20 +321,42 @@ function App() {
                                 <div key={i} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded border border-gray-300"><div className="w-3 h-3 border border-black" style={{background: k.c}}></div>{k.l}</div>
                             ))}
                         </div>
-                        <div className="text-[10px] text-gray-500 font-medium">{mode === 'synthesis' && "Tip: Haz clic varias veces en una casilla para colocar planos inclinados (Triángulos)."}</div>
+                        <div className="text-[10px] text-gray-500 font-medium">{mode === 'synthesis' ? "Tip: Usa la barra de herramientas para cambiar entre Bloques y Triángulos." : "Tip: Selecciona el nivel y completa las vistas."}</div>
                     </div>
                 </div>
                 <div id="grid-container" className="w-3/5 flex flex-col bg-white relative">
                     <div className="absolute inset-0 pointer-events-none opacity-5" style={{backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
                     <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center">
-                        <div className={`border-2 border-black p-2 text-xs font-bold text-center max-w-md mb-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${mode === 'analysis' ? 'bg-yellow-100' : 'bg-blue-100'}`}>
-                            {mode === 'analysis' ? "OBJETIVO: Dibuja las vistas correspondientes a la pieza 3D. Arrastra para pintar rápido." : "CONSTRUCTOR: Pinta en las 3 vistas. Clic repetido para piezas inclinadas (triángulos)."}
+                        <div className={`flex flex-col items-center border-2 border-black p-4 text-xs font-bold text-center max-w-lg mb-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${mode === 'analysis' ? 'bg-yellow-100' : 'bg-blue-100'}`}>
+                            <div className="mb-2 uppercase text-sm">{mode === 'analysis' ? "Análisis: Dibuja las vistas" : "Constructor: Crea la pieza"}</div>
+                            
+                            {/* TOOLBAR */}
+                            <div className="flex gap-4 mt-2 bg-white/50 p-1 rounded-full border border-black/10">
+                                <button 
+                                    onClick={() => setTool('cube')}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 transition-all
+                                    ${tool === 'cube' ? 'bg-black text-white border-black scale-105' : 'bg-white border-gray-300 hover:bg-gray-100'}`}
+                                >
+                                    <Box size={16}/> BLOQUE / BORRAR
+                                </button>
+                                <button 
+                                    onClick={() => setTool('triangle')}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 transition-all
+                                    ${tool === 'triangle' ? 'bg-black text-white border-black scale-105' : 'bg-white border-gray-300 hover:bg-gray-100'}`}
+                                >
+                                    <Triangle size={16}/> PLANOS INCLINADOS
+                                </button>
+                            </div>
+                            <div className="mt-2 text-[10px] opacity-70">
+                                {tool === 'cube' ? "Clic para poner/quitar cuadrados completos." : "Clic para poner triángulos. Clic repetido para rotar."}
+                            </div>
                         </div>
+
                         <div id="plans-capture-area" className="p-8 bg-white/90 backdrop-blur-sm rounded-xl border border-gray-100">
                             <div className="grid grid-cols-2 gap-x-12 gap-y-12">
-                                <div className="flex justify-center"><ProjectionGrid title="ALZADO (Frente)" color={PALETTE.FACE_FRONT} data={mode === 'analysis' ? userAnalysisGrids.alzado : userSynthesisGrids.alzado} onCellClick={(i, val) => handleCellClick('alzado', i, val)} onEdgeClick={(t, i) => handleEdgeClick('alzado', t, i)} solution={mode === 'analysis' ? levelSolution.alzado : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={mode === 'synthesis' ? synthesisValidity?.alzado : undefined} resolution={activeResolution}/></div>
-                                <div className="flex justify-center"><ProjectionGrid title="PERFIL (Derecho)" color={PALETTE.FACE_SIDE} data={mode === 'analysis' ? userAnalysisGrids.perfil : userSynthesisGrids.perfil} onCellClick={(i, val) => handleCellClick('perfil', i, val)} onEdgeClick={(t, i) => handleEdgeClick('perfil', t, i)} solution={mode === 'analysis' ? levelSolution.perfil : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={mode === 'synthesis' ? synthesisValidity?.perfil : undefined} resolution={activeResolution}/></div>
-                                <div className="flex justify-center"><ProjectionGrid title="PLANTA (Arriba)" color={PALETTE.FACE_TOP} data={mode === 'analysis' ? userAnalysisGrids.planta : userSynthesisGrids.planta} onCellClick={(i, val) => handleCellClick('planta', i, val)} onEdgeClick={(t, i) => handleEdgeClick('planta', t, i)} solution={mode === 'analysis' ? levelSolution.planta : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={mode === 'synthesis' ? synthesisValidity?.planta : undefined} resolution={activeResolution}/></div>
+                                <div className="flex justify-center"><ProjectionGrid title="ALZADO (Frente)" color={PALETTE.FACE_FRONT} data={mode === 'analysis' ? userAnalysisGrids.alzado : userSynthesisGrids.alzado} onCellClick={(i, val) => handleCellClick('alzado', i, val)} onEdgeClick={(t, i) => handleEdgeClick('alzado', t, i)} solution={mode === 'analysis' ? levelSolution.alzado : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={mode === 'synthesis' ? synthesisValidity?.alzado : undefined} resolution={activeResolution} tool={tool}/></div>
+                                <div className="flex justify-center"><ProjectionGrid title="PERFIL (Derecho)" color={PALETTE.FACE_SIDE} data={mode === 'analysis' ? userAnalysisGrids.perfil : userSynthesisGrids.perfil} onCellClick={(i, val) => handleCellClick('perfil', i, val)} onEdgeClick={(t, i) => handleEdgeClick('perfil', t, i)} solution={mode === 'analysis' ? levelSolution.perfil : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={mode === 'synthesis' ? synthesisValidity?.perfil : undefined} resolution={activeResolution} tool={tool}/></div>
+                                <div className="flex justify-center"><ProjectionGrid title="PLANTA (Arriba)" color={PALETTE.FACE_TOP} data={mode === 'analysis' ? userAnalysisGrids.planta : userSynthesisGrids.planta} onCellClick={(i, val) => handleCellClick('planta', i, val)} onEdgeClick={(t, i) => handleEdgeClick('planta', t, i)} solution={mode === 'analysis' ? levelSolution.planta : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={mode === 'synthesis' ? synthesisValidity?.planta : undefined} resolution={activeResolution} tool={tool}/></div>
                                 <div></div>
                             </div>
                         </div>
@@ -330,6 +388,26 @@ function App() {
                             <div className="flex gap-2">
                                 <textarea readOnly value={progressCode} className="w-full h-24 p-2 text-xs font-mono border-2 border-black resize-none bg-white"/>
                                 <button onClick={() => navigator.clipboard.writeText(progressCode)} className="px-4 bg-black text-white font-bold border-2 border-black hover:bg-gray-800 flex flex-col items-center justify-center gap-1"><Clipboard size={16}/> COPIAR</button>
+                            </div>
+                            
+                            {/* LOAD SECTION */}
+                            <div className="mt-4 border-t-2 border-blue-200 pt-4">
+                                <label className="text-xs font-bold uppercase block mb-1">¿Ya tienes un código? Cárgalo aquí:</label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={loadCode} 
+                                        onChange={(e) => setLoadCode(e.target.value)} 
+                                        placeholder="Pegar código DIEDRICO-LAB-V1_..." 
+                                        className="flex-1 p-2 border-2 border-black text-xs font-mono"
+                                    />
+                                    <button 
+                                        onClick={handleLoadProgress} 
+                                        className="px-4 bg-white text-black font-bold border-2 border-black hover:bg-gray-100 flex items-center gap-1"
+                                    >
+                                        <Upload size={16}/> CARGAR
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <div className="bg-yellow-50 border-2 border-yellow-200 p-4">

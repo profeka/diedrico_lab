@@ -14,10 +14,11 @@ interface ProjectionGridProps {
     mode: 'analysis' | 'synthesis';
     validityMask?: boolean[]; 
     resolution: number;
+    tool?: 'cube' | 'triangle';
 }
 
 const ProjectionGrid: React.FC<ProjectionGridProps> = ({ 
-    title, color, data, onCellClick, onEdgeClick, solution, showResult, readOnly = false, mode, validityMask, resolution
+    title, color, data, onCellClick, onEdgeClick, solution, showResult, readOnly = false, mode, validityMask, resolution, tool = 'cube'
 }) => {
     const gridStyle = {
         gridTemplateColumns: `repeat(${resolution}, minmax(0, 1fr))`
@@ -37,13 +38,17 @@ const ProjectionGrid: React.FC<ProjectionGridProps> = ({
         
         isDragging.current = true;
         
-        // Cycle: 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0
         const current = data.cells[idx];
         let next = 0;
-        if (current === 0) next = 1;
-        else if (current === 1) next = 2; 
-        else if (current < 5) next = current + 1;
-        else next = 0;
+
+        if (tool === 'cube') {
+            if (current === 0) next = 1;
+            else next = 0;
+        } else {
+            if (current < 2) next = 2;
+            else if (current < 5) next = current + 1;
+            else next = 2;
+        }
 
         paintValue.current = next;
         if (onCellClick) onCellClick(idx, next);
@@ -60,18 +65,11 @@ const ProjectionGrid: React.FC<ProjectionGridProps> = ({
         if (type === 0) return null;
         if (type === 1) return <div className="w-full h-full" style={{ backgroundColor: color }} />;
         
-        // SVG Triangles
         let points = "";
-        // 2 (BL): Bottom-Left filled. Pts: 0,32 (BL), 32,32 (BR), 0,0 (TL) -> No, standard BL triangle is (0,0 TL)-(0,32 BL)-(32,32 BR)?
-        // Visual BL ◣: Occupies left edge and bottom edge.
-        // Points: (0,0), (0,32), (32,32).
         if (type === 2) points = "0,0 0,32 32,32"; 
-        // 3 (BR): ◢ Occupies bottom and right. (0,32), (32,32), (32,0).
-        else if (type === 3) points = "0,32 32,32 32,0"; 
-        // 4 (TR): ◥ Occupies top and right. (0,0), (32,0), (32,32)? No. (0,0)-(32,0)-(32,32) covers TR.
+        else if (type === 3) points = "32,0 32,32 0,32"; 
         else if (type === 4) points = "0,0 32,0 32,32"; 
-        // 5 (TL): ◤ Occupies top and left. (0,0), (32,0), (0,32).
-        else if (type === 5) points = "0,0 32,0 0,32"; 
+        else if (type === 5) points = "0,32 0,0 32,0"; 
 
         return (
             <svg viewBox="0 0 32 32" className="w-full h-full block">
@@ -122,7 +120,6 @@ const ProjectionGrid: React.FC<ProjectionGridProps> = ({
                         );
                     })}
                 </div>
-                {/* Edges rendering omitted for brevity as unchanged logic but required for component completeness */}
                  <div className="absolute top-1 left-1 right-1 bottom-1 pointer-events-none">
                     {Array.from({length: resolution * (resolution - 1)}).map((_, i) => {
                         const r = Math.floor(i / (resolution - 1));
