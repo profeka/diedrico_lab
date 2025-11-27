@@ -4,7 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Diédrico Lab - Architect Edition</title>
+    
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Babel Standalone for in-browser JSX/TSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
     <style>
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #E0E7FF; }
         .cell-anim { transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1); }
@@ -18,21 +24,976 @@
         }
         .animate-success { animation: success-pop 0.3s ease-in-out; }
     </style>
-<script type="importmap">
+
+    <!-- Import Map for External Libraries -->
+    <script type="importmap">
 {
   "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
-    "three": "https://aistudiocdn.com/three@^0.181.2",
-    "three/": "https://aistudiocdn.com/three@^0.181.2/",
+    "react": "https://esm.sh/react@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "lucide-react": "https://esm.sh/lucide-react@0.294.0",
+    "three": "https://esm.sh/three@0.160.0",
+    "three/examples/jsm/controls/OrbitControls.js": "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js",
+    "three/examples/jsm/utils/BufferGeometryUtils.js": "https://esm.sh/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js",
+    "html2canvas": "https://esm.sh/html2canvas@1.4.1",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "html2canvas": "https://esm.sh/html2canvas@1.4.1"
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "three/": "https://aistudiocdn.com/three@^0.181.2/"
   }
 }
 </script>
 </head>
 <body>
     <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef, useMemo } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { Grid, ChevronLeft, ChevronRight, MousePointer2, Pause, Play, Info, CheckCircle2, RefreshCw, PencilRuler, Eye, Edit3, Camera, Download, Image as ImageIcon, Eraser, User, Clipboard, Lock, Unlock, Box, Triangle, Upload, X } from 'lucide-react';
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+        import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+        import html2canvas from 'html2canvas';
+
+        // --- 1. GEOMETRY UTILS (Merged from utils/geometry.ts) ---
+
+        const U = 15; // Unit size
+
+        const getLevelResolution = (level) => {
+            return level >= 20 ? 6 : 4;
+        };
+
+        const getLevelName = (level) => {
+            const names = {
+                1: "El Cubo",
+                2: "El Escalón",
+                3: "Gusano",
+                4: "Pilar",
+                5: "Mesa",
+                6: "Muesca",
+                7: "Pozo",
+                8: "Escalera",
+                9: "Arco",
+                10: "Cruz 3D",
+                11: "Puente",
+                12: "Ventana",
+                13: "Cruz",
+                14: "Doble Bloque",
+                15: "Autovía",
+                16: "Intersección",
+                17: "La Escalera",
+                18: "Escenario",
+                19: "La Serpiente",
+                20: "La U",
+                21: "Escaleras Gemelas",
+                22: "Cuatro Pilares",
+                23: "La Cruz",
+                24: "La Muralla",
+                25: "El Bosque",
+                26: "Gran Pirámide",
+                27: "La Rampa",
+                28: "Cubo Hueco",
+                29: "La Espiral",
+                30: "El Núcleo"
+            };
+            return names[level] || "Pieza Desconocida";
+        };
+
+        const PALETTE = {
+            BG: '#E0E7FF',       
+            GRID_BG: '#FFFFFF',
+            STROKE: '#000000',   
+            ACCENT: '#8B5CF6',   
+            FACE_TOP: '#A3E635',    // Planta
+            FACE_FRONT: '#F472B6',  // Alzado
+            FACE_SIDE: '#38BDF8',   // Perfil Derecho
+            FACE_SIDE_LEFT: '#FB923C', // Perfil Izquierdo
+            FACE_BACK: '#4F46E5',   // Atrás
+            FACE_BOTTOM: '#059669', // Abajo
+            SUCCESS: '#22C55E',     
+            ERROR: '#EF4444'        
+        };
+
+        const createEmptyGridState = (res) => {
+            const numCells = res * res;
+            const numVEdges = res * (res - 1);
+            const numHEdges = (res - 1) * res;
+            return {
+                cells: new Array(numCells).fill(0),
+                v: new Array(numVEdges).fill(0),
+                h: new Array(numHEdges).fill(0)
+            };
+        };
+
+        const getVoxelData = (level) => {
+            const voxels = [];
+            const addBox = (x, y, z, w=1, h=1, d=1) => {
+                for(let i=0; i<w; i++)
+                    for(let j=0; j<h; j++)
+                        for(let k=0; k<d; k++)
+                            voxels.push([x+i, y+j, z+k, 1]);
+            };
+
+            switch(level) {
+                case 1: addBox(0,0,0, 2,2,2); break; 
+                case 2: addBox(0,0,0, 2,1,2); addBox(0,1,0, 1,1,2); break; 
+                case 3: addBox(0,0,0, 1,1,1); addBox(1,0,0, 1,1,1); addBox(1,1,0, 1,1,1); addBox(2,1,0, 1,1,1); break;
+                case 4: addBox(1,0,1, 1,4,1); addBox(2,0,1, 1,4,1); addBox(1,1,1, 2,1,1); addBox(1,3,1, 2,1,1); addBox(1,0,2, 1,2,1); addBox(2,0,2, 1,2,1); break;
+                case 5: addBox(1,0,1, 1,4,1); addBox(2,0,1, 1,4,1); addBox(1,2,1, 2,1,1); addBox(1,0,2, 1,2,1); addBox(2,0,2, 1,2,1); break;
+                case 6: addBox(0,0,0, 2,1,2); addBox(0,1,0, 1,1,2); addBox(0,0,0, 2,2,1); break; 
+                case 7: addBox(0,0,0, 3,2,1); addBox(0,0,2, 3,2,1); addBox(0,0,1, 1,2,1); addBox(2,0,1, 1,2,1); break; 
+                case 8: addBox(2,0,0, 1,1,2); addBox(1,0,0, 1,2,2); addBox(0,0,0, 1,3,2); break; 
+                case 9: addBox(0,0,0, 1,4,2); addBox(3,0,0, 1,4,2); addBox(0,3,0, 4,1,2); break; 
+                case 10: addBox(1,0,1, 2,4,2); addBox(0,2,1, 4,1,2); break; 
+                case 11: addBox(0,0,1, 1,2,2); addBox(3,0,1, 1,2,2); addBox(0,2,1, 4,1,2); break; 
+                case 12: addBox(0,0,1, 4,1,1); addBox(0,3,1, 4,1,1); addBox(0,1,1, 1,2,1); addBox(3,1,1, 1,2,1); break; 
+                case 13: addBox(1,0,1, 2,4,1); addBox(0,1,1, 4,2,1); break; 
+                case 14: addBox(1,0,0, 2,2,1); addBox(1,2,1, 2,2,1); break; 
+                case 15: addBox(0,0,1, 1,2,1); addBox(3,0,1, 1,2,1); addBox(0,2,0, 4,1,3); break; 
+                case 16: addBox(0,1,1, 4,1,2); addBox(1,1,0, 2,1,4); break; 
+                case 17: addBox(0,0,0, 4,1,4); addBox(0,1,1, 4,1,3); addBox(0,2,2, 4,1,2); addBox(0,3,3, 4,1,1); break; 
+                case 18: addBox(0,0,0, 4,1,3); addBox(0,1,0, 4,3,1); break; 
+                case 19: addBox(0,0,0, 1,1,1); addBox(1,0,0, 1,1,1); addBox(1,1,0, 1,1,1); addBox(1,1,1, 1,1,1); addBox(2,1,1, 1,1,1); addBox(2,2,1, 1,1,1); addBox(2,2,0, 1,1,1); break;
+                case 20: addBox(0,0,0, 6,1,2); addBox(0,1,0, 1,2,2); addBox(5,1,0, 1,2,2); break; 
+                case 21: for(let i=0; i<6; i++) { addBox(0,i,i, 2,1,1); addBox(4,i,i, 2,1,1); } break; 
+                case 22: addBox(0,0,0, 6,1,6); addBox(1,1,1, 1,3,1); addBox(4,1,4, 1,3,1); addBox(1,1,4, 1,3,1); addBox(4,1,1, 1,3,1); break; 
+                case 23: addBox(2,0,2, 2,6,2); addBox(0,3,2, 2,1,2); addBox(4,3,2, 2,1,2); break; 
+                case 24: addBox(0,0,0, 6,2,2); addBox(1,2,0, 1,1,2); addBox(3,2,0, 1,1,2); addBox(5,2,0, 1,1,2); break; 
+                case 25: addBox(0,0,0, 1,6,1); addBox(2,0,1, 1,4,1); addBox(5,0,2, 1,3,1); addBox(1,0,3, 1,5,1); addBox(4,0,5, 1,2,1); break; 
+                case 26: addBox(0,0,0, 6,1,6); addBox(1,1,1, 4,1,4); addBox(2,2,2, 2,1,2); break; 
+                case 27: addBox(0,0,0, 6,1,1); addBox(0,1,1, 5,1,1); addBox(0,2,2, 4,1,1); addBox(0,3,3, 3,1,1); addBox(0,4,4, 2,1,1); addBox(0,5,5, 1,1,1); break; 
+                case 28: addBox(0,0,0, 6,1,1); addBox(0,0,0, 1,6,1); addBox(0,0,0, 1,1,6); addBox(5,0,0, 1,6,1); addBox(0,5,0, 6,1,1); addBox(0,0,5, 1,6,1); break; 
+                case 29: addBox(0,0,0, 2,1,2); addBox(2,1,0, 2,1,2); addBox(4,2,0, 2,1,2); addBox(4,3,2, 2,1,2); addBox(2,4,2, 2,1,2); addBox(0,4,4, 2,1,2); break; 
+                case 30: addBox(0,0,0, 6,1,6); addBox(0,5,0, 6,1,6); addBox(0,1,0, 1,4,1); addBox(5,1,0, 1,4,1); addBox(0,1,5, 1,4,1); addBox(5,1,5, 1,4,1); addBox(2,2,2, 2,2,2); break; 
+                default: addBox(0,0,0, 2,2,2);
+            }
+            return voxels;
+        };
+
+        const calculateSolution = (voxels, res) => {
+            const numCells = res * res;
+            const numV = res * (res - 1);
+            const numH = (res - 1) * res;
+
+            const projections = {
+                alzado: { cells: Array(numCells).fill(0), v: Array(numV).fill(0), h: Array(numH).fill(0) },
+                planta: { cells: Array(numCells).fill(0), v: Array(numV).fill(0), h: Array(numH).fill(0) },
+                perfil: { cells: Array(numCells).fill(0), v: Array(numV).fill(0), h: Array(numH).fill(0) }
+            };
+
+            const depthPlanta = Array(numCells).fill(-99);
+            const depthAlzado = Array(numCells).fill(-99);
+            const depthPerfil = Array(numCells).fill(-99);
+
+            voxels.forEach(([x, y, z]) => {
+                if (x >= res || y >= res || z >= res) return; 
+
+                const idxP = z * res + x;
+                projections.planta.cells[idxP] = 1;
+                depthPlanta[idxP] = Math.max(depthPlanta[idxP], y);
+
+                const idxA = (res - 1 - y) * res + x;
+                projections.alzado.cells[idxA] = 1;
+                depthAlzado[idxA] = Math.max(depthAlzado[idxA], z);
+
+                const idxS = (res - 1 - y) * res + (res - 1 - z);
+                projections.perfil.cells[idxS] = 1;
+                depthPerfil[idxS] = Math.max(depthPerfil[idxS], x);
+            });
+
+            const calcEdges = (projObj, depthMap) => {
+                for(let r=0; r<res; r++) {
+                    for(let c=0; c<res-1; c++) {
+                        const i = r * res + c;
+                        const nextI = r * res + c + 1;
+                        if (projObj.cells[i] > 0 && projObj.cells[nextI] > 0 && depthMap[i] !== depthMap[nextI]) {
+                            projObj.v[r * (res - 1) + c] = 1; 
+                        }
+                    }
+                }
+                for(let r=0; r<res-1; r++) {
+                    for(let c=0; c<res; c++) {
+                        const i = r * res + c;
+                        const nextI = (r + 1) * res + c;
+                        if (projObj.cells[i] > 0 && projObj.cells[nextI] > 0 && depthMap[i] !== depthMap[nextI]) {
+                            projObj.h[r * res + c] = 1; 
+                        }
+                    }
+                }
+            };
+            calcEdges(projections.planta, depthPlanta);
+            calcEdges(projections.alzado, depthAlzado);
+            calcEdges(projections.perfil, depthPerfil);
+            return projections;
+        };
+
+        const calculateVoxelsFromViews = (alzado, planta, perfil, res) => {
+            const voxels = [];
+            for (let x = 0; x < res; x++) {
+                for (let y = 0; y < res; y++) {
+                    for (let z = 0; z < res; z++) {
+                        const idxA = (res - 1 - y) * res + x;
+                        const valA = alzado[idxA];
+
+                        const idxP = z * res + x;
+                        const valP = planta[idxP];
+
+                        const idxS = (res - 1 - y) * res + (res - 1 - z);
+                        const valS = perfil[idxS];
+
+                        if (valA > 0 && valP > 0 && valS > 0) {
+                            let type = 1; 
+                            if (valA >= 2) type = 10 + valA; 
+                            else if (valS >= 2) type = 20 + valS;
+                            voxels.push([x, y, z, type]);
+                        }
+                    }
+                }
+            }
+            return voxels;
+        };
+
+        const createWedgeGeometry = (shapeType, axis) => {
+            const buildWedge = (p0, p1, p2) => {
+                const v3 = (p, d) => {
+                    if (axis === 'z') return [p[0] - 0.5, p[1] - 0.5, d - 0.5];
+                    return [d - 0.5, p[1] - 0.5, 0.5 - p[0]]; 
+                }
+                const pts = [];
+                const addTri = (a, b, c) => {
+                    pts.push(...a.map(v=>v*U), ...b.map(v=>v*U), ...c.map(v=>v*U));
+                }
+                const addQuad = (a, b, c, d) => {
+                    addTri(a,b,c); addTri(a,c,d);
+                }
+                const A0 = v3(p0, 0), B0 = v3(p1, 0), C0 = v3(p2, 0);
+                const A1 = v3(p0, 1), B1 = v3(p1, 1), C1 = v3(p2, 1);
+                addTri(A0, C0, B0); // Front 
+                addTri(A1, B1, C1); // Back
+                addQuad(A0, B0, B1, A1); // Side 1
+                addQuad(B0, C0, C1, B1); // Side 2
+                addQuad(C0, A0, A1, C1); // Side 3
+                const buffer = new THREE.BufferGeometry();
+                buffer.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+                return buffer;
+            };
+            if (shapeType === 2) return buildWedge([0,0], [1,0], [0,1]);
+            if (shapeType === 3) return buildWedge([0,0], [1,0], [1,1]);
+            if (shapeType === 4) return buildWedge([1,0], [1,1], [0,1]);
+            if (shapeType === 5) return buildWedge([0,0], [1,1], [0,1]);
+            return new THREE.BoxGeometry(U,U,U);
+        };
+
+        const generateVoxelMesh = (voxels, res) => {
+            if(!voxels || voxels.length === 0) return null;
+            const geometries = [];
+            const center = new THREE.Vector3((res * U) / 2 - U/2, (res * U) / 2 - U/2, (res * U) / 2 - U/2);
+
+            voxels.forEach(([x, y, z, type]) => {
+                let geo;
+                if (!type || type === 1) {
+                    geo = new THREE.BoxGeometry(U, U, U).toNonIndexed(); 
+                    if (geo.getAttribute('normal')) geo.deleteAttribute('normal'); 
+                    if (geo.getAttribute('uv')) geo.deleteAttribute('uv');
+                } else if (type >= 12 && type <= 15) {
+                    geo = createWedgeGeometry(type - 10, 'z');
+                } else if (type >= 22 && type <= 25) {
+                    geo = createWedgeGeometry(type - 20, 'x'); 
+                } else {
+                    geo = new THREE.BoxGeometry(U, U, U).toNonIndexed();
+                    if (geo.getAttribute('normal')) geo.deleteAttribute('normal');
+                    if (geo.getAttribute('uv')) geo.deleteAttribute('uv');
+                }
+                geo.translate(x * U - center.x, y * U - center.y, z * U - center.z);
+                geometries.push(geo);
+            });
+
+            if(geometries.length === 0) return null;
+            let mergedGeo = BufferGeometryUtils.mergeGeometries(geometries);
+            mergedGeo.computeVertexNormals();
+
+            const colors = [];
+            const pos = mergedGeo.attributes.position;
+            const count = pos.count;
+            const normal = mergedGeo.attributes.normal;
+            const _normal = new THREE.Vector3();
+
+            for (let i = 0; i < count; i++) {
+                _normal.fromBufferAttribute(normal, i);
+                let colorHex = PALETTE.FACE_FRONT;
+                if (_normal.y > 0.5) colorHex = PALETTE.FACE_TOP;
+                else if (_normal.y < -0.5) colorHex = PALETTE.FACE_BOTTOM;
+                else if (_normal.z > 0.5) colorHex = PALETTE.FACE_FRONT;
+                else if (_normal.z < -0.5) colorHex = PALETTE.FACE_BACK;
+                else if (_normal.x > 0.5) colorHex = PALETTE.FACE_SIDE;
+                else if (_normal.x < -0.5) colorHex = PALETTE.FACE_SIDE_LEFT;
+
+                const c = new THREE.Color(colorHex);
+                colors.push(c.r, c.g, c.b);
+            }
+            mergedGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = new THREE.MeshBasicMaterial({ vertexColors: true });
+            const mesh = new THREE.Mesh(mergedGeo, material);
+            const edges = new THREE.EdgesGeometry(mergedGeo, 1);
+            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: PALETTE.STROKE, linewidth: 2 }));
+            mesh.add(line);
+            return mesh;
+        };
+
+        // --- 2. COMPONENTS ---
+
+        const VoxelViewer = ({ voxels, autoRotate, onToggleRotate, gridResolution, onVoxelClick }) => {
+            const mountRef = useRef(null);
+            const controlsRef = useRef(null);
+            const sceneRef = useRef(null);
+            const meshRef = useRef(null);
+            const ghostRef = useRef(null);
+            const axisRef = useRef(null);
+            const rendererRef = useRef(null);
+            const cameraRef = useRef(null);
+            const raycaster = useRef(new THREE.Raycaster());
+            const pointer = useRef(new THREE.Vector2());
+            const isDragging = useRef(false);
+
+            useEffect(() => {
+                if (!mountRef.current) return;
+                const scene = new THREE.Scene();
+                scene.background = new THREE.Color('#E5E7EB'); 
+                sceneRef.current = scene;
+
+                const w = mountRef.current.clientWidth;
+                const h = mountRef.current.clientHeight;
+                const aspect = w / h;
+                
+                const camera = new THREE.OrthographicCamera(-60 * aspect, 60 * aspect, 60, -60, 1, 1000);
+                camera.position.set(100, 81.6, 100); 
+                camera.lookAt(scene.position);
+                cameraRef.current = camera;
+
+                const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+                renderer.setSize(w, h);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                mountRef.current.appendChild(renderer.domElement);
+                rendererRef.current = renderer;
+
+                const controls = new OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.autoRotate = autoRotate;
+                controls.autoRotateSpeed = 2.0;
+                controls.addEventListener('start', () => { isDragging.current = true; });
+                controls.addEventListener('end', () => { isDragging.current = false; });
+                controlsRef.current = controls;
+
+                let animFrame;
+                const animate = () => {
+                    animFrame = requestAnimationFrame(animate);
+                    if (controlsRef.current) controlsRef.current.update();
+                    renderer.render(scene, camera);
+                };
+                animate();
+
+                const handleResize = () => {
+                    if (!mountRef.current || !cameraRef.current || !rendererRef.current) return;
+                    const width = mountRef.current.clientWidth;
+                    const height = mountRef.current.clientHeight;
+                    const newAspect = width / height;
+                    cameraRef.current.left = -60 * newAspect;
+                    cameraRef.current.right = 60 * newAspect;
+                    cameraRef.current.top = 60;
+                    cameraRef.current.bottom = -60;
+                    cameraRef.current.updateProjectionMatrix();
+                    rendererRef.current.setSize(width, height);
+                };
+                window.addEventListener('resize', handleResize);
+
+                return () => {
+                    window.removeEventListener('resize', handleResize);
+                    cancelAnimationFrame(animFrame);
+                    if (mountRef.current) mountRef.current.removeChild(renderer.domElement);
+                    renderer.dispose();
+                };
+            }, []);
+
+            useEffect(() => {
+                const handlePointerDown = () => { isDragging.current = false; };
+                const handleClick = (event) => {
+                    if (!onVoxelClick || !rendererRef.current || !cameraRef.current || !meshRef.current || !mountRef.current) return;
+                    if (isDragging.current) return;
+                    const isRightClick = event.button === 2;
+                    const isShiftClick = event.shiftKey && event.button === 0;
+                    if (!isRightClick && !isShiftClick) return;
+
+                    const rect = mountRef.current.getBoundingClientRect();
+                    pointer.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                    pointer.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                    raycaster.current.setFromCamera(pointer.current, cameraRef.current);
+                    const intersects = raycaster.current.intersectObject(meshRef.current);
+
+                    if (intersects.length > 0) {
+                        const intersect = intersects[0];
+                        const face = intersect.face;
+                        if (!face) return;
+                        const p = intersect.point.clone().add(face.normal.clone().multiplyScalar(-U/2));
+                        const center = new THREE.Vector3((gridResolution * U) / 2 - U/2, (gridResolution * U) / 2 - U/2, (gridResolution * U) / 2 - U/2);
+                        const voxelX = Math.round((p.x + center.x) / U);
+                        const voxelY = Math.round((p.y + center.y) / U);
+                        const voxelZ = Math.round((p.z + center.z) / U);
+                        onVoxelClick([voxelX, voxelY, voxelZ]);
+                    }
+                };
+                const element = mountRef.current;
+                if (element) {
+                    element.addEventListener('pointerdown', handlePointerDown);
+                    element.addEventListener('mousedown', handleClick);
+                    element.addEventListener('contextmenu', (e) => e.preventDefault());
+                }
+                return () => {
+                    if (element) {
+                        element.removeEventListener('pointerdown', handlePointerDown);
+                        element.removeEventListener('mousedown', handleClick);
+                        element.removeEventListener('contextmenu', (e) => e.preventDefault());
+                    }
+                };
+            }, [onVoxelClick, gridResolution]);
+
+            useEffect(() => {
+                if (!sceneRef.current) return;
+                if (ghostRef.current) sceneRef.current.remove(ghostRef.current);
+                const boxSize = gridResolution * U;
+                const ghostGeo = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
+                const ghost = new THREE.Mesh(ghostGeo, new THREE.MeshBasicMaterial({ color: 0x000000, wireframe: true, opacity: 0.05, transparent: true }));
+                sceneRef.current.add(ghost);
+                ghostRef.current = ghost;
+
+                if (axisRef.current) sceneRef.current.remove(axisRef.current);
+                const axisSize = boxSize / 2; 
+                const axesHelper = new THREE.AxesHelper(boxSize + 10);
+                axesHelper.position.set(-axisSize, -axisSize, -axisSize); 
+                const axesMat = axesHelper.material;
+                if (axesMat) { axesMat.transparent = true; axesMat.opacity = 0.25; }
+                sceneRef.current.add(axesHelper);
+                axisRef.current = axesHelper;
+            }, [gridResolution]);
+
+            useEffect(() => {
+                if (!sceneRef.current) return;
+                if (meshRef.current) {
+                    sceneRef.current.remove(meshRef.current);
+                    meshRef.current.geometry.dispose();
+                    meshRef.current.material.dispose();
+                    meshRef.current = null;
+                }
+                const mesh = generateVoxelMesh(voxels, gridResolution);
+                if (mesh) {
+                    sceneRef.current.add(mesh);
+                    meshRef.current = mesh;
+                }
+            }, [voxels, gridResolution]);
+
+            useEffect(() => {
+                if (controlsRef.current) controlsRef.current.autoRotate = autoRotate;
+            }, [autoRotate]);
+
+            return <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />;
+        };
+
+        const ProjectionGrid = ({ title, color, data, onCellClick, onEdgeClick, solution, showResult, readOnly = false, mode, validityMask, resolution, tool = 'cube' }) => {
+            const gridStyle = { gridTemplateColumns: `repeat(${resolution}, minmax(0, 1fr))` };
+            const isDragging = useRef(false);
+            const paintValue = useRef(0);
+
+            useEffect(() => {
+                const handleGlobalMouseUp = () => { isDragging.current = false; };
+                window.addEventListener('mouseup', handleGlobalMouseUp);
+                return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+            }, []);
+
+            const handleMouseDown = (idx) => {
+                if (readOnly || (mode === 'analysis' && showResult === 'success')) return;
+                isDragging.current = true;
+                const current = data.cells[idx];
+                let next = 0;
+                if (tool === 'cube') {
+                    if (current === 0) next = 1; else next = 0;
+                } else {
+                    if (current < 2) next = 2; else if (current < 5) next = current + 1; else next = 2;
+                }
+                paintValue.current = next;
+                if (onCellClick) onCellClick(idx, next);
+            };
+
+            const handleMouseEnter = (idx) => {
+                if (isDragging.current && onCellClick) {
+                    if (readOnly || (mode === 'analysis' && showResult === 'success')) return;
+                    onCellClick(idx, paintValue.current);
+                }
+            };
+
+            const renderCellContent = (type, color) => {
+                if (type === 0) return null;
+                if (type === 1) return <div className="w-full h-full" style={{ backgroundColor: color }} />;
+                let points = "";
+                if (type === 2) points = "0,0 0,32 32,32"; 
+                else if (type === 3) points = "32,0 32,32 0,32"; 
+                else if (type === 4) points = "0,0 32,0 32,32"; 
+                else if (type === 5) points = "0,32 0,0 32,0"; 
+                return <svg viewBox="0 0 32 32" className="w-full h-full block"><polygon points={points} fill={color} /></svg>;
+            };
+
+            return (
+                <div className="flex flex-col items-center">
+                    <div className="mb-2 font-black uppercase text-[10px] tracking-widest bg-black text-white px-2 py-1 shadow-md select-none">{title}</div>
+                    <div className="relative bg-white border-4 border-black p-1 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                        <div className="grid gap-0" style={gridStyle}>
+                            {data.cells.map((activeType, i) => {
+                                let border = activeType > 0 ? 'border-0' : 'border border-gray-200';
+                                let cellColor = color;
+                                let isError = false;
+                                if (mode === 'analysis' && showResult && solution) {
+                                    const solType = solution.cells[i];
+                                    const userFilled = activeType > 0;
+                                    const solFilled = solType > 0;
+                                    if (userFilled !== solFilled) { isError = true; cellColor = '#FCA5A5'; } 
+                                    else if (userFilled) { cellColor = PALETTE.SUCCESS; }
+                                }
+                                const isInvalid = mode === 'synthesis' && activeType > 0 && validityMask && !validityMask[i];
+                                return (
+                                    <div key={i} onMouseDown={() => handleMouseDown(i)} onMouseEnter={() => handleMouseEnter(i)} className={`w-8 h-8 ${border} ${readOnly ? '' : 'cursor-pointer'} relative select-none flex items-center justify-center bg-transparent`} style={{ backgroundImage: isInvalid ? 'repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px)' : 'none' }}>
+                                        {renderCellContent(activeType, isError ? '#FCA5A5' : cellColor)}
+                                        {mode === 'analysis' && showResult && isError && <div className="absolute inset-0 flex items-center justify-center text-red-700 font-black z-0">×</div>}
+                                        {isInvalid && <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none"><X size={20} className="text-red-500 opacity-80" strokeWidth={3} /></div>}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="absolute top-1 left-1 right-1 bottom-1 pointer-events-none">
+                            {Array.from({length: resolution * (resolution - 1)}).map((_, i) => {
+                                const r = Math.floor(i / (resolution - 1));
+                                const c = i % (resolution - 1);
+                                const left = (c + 1) * 2 + 'rem';
+                                const top = r * 2 + 'rem';
+                                const edgeState = data.v[i];
+                                let lineClass = edgeState === 1 ? 'bg-black' : 'bg-transparent';
+                                const zIndex = edgeState > 0 ? 'z-20' : 'z-30';
+                                return <div key={`v-${i}`} className={`absolute w-2 h-8 -ml-1 flex justify-center items-center group ${zIndex} ${(!readOnly && (!showResult || showResult === 'error')) ? 'cursor-col-resize pointer-events-auto' : ''}`} style={{ left, top }} onMouseDown={() => onEdgeClick && onEdgeClick('v', i)}><div className={`w-1 h-full transition-colors ${lineClass} ${(!readOnly && edgeState === 0) ? 'group-hover:bg-gray-300' : ''}`}></div></div>;
+                            })}
+                        </div>
+                        <div className="absolute top-1 left-1 right-1 bottom-1 pointer-events-none">
+                            {Array.from({length: resolution * (resolution - 1)}).map((_, i) => {
+                                const r = Math.floor(i / resolution);
+                                const c = i % resolution;
+                                const top = (r + 1) * 2 + 'rem';
+                                const left = c * 2 + 'rem';
+                                const edgeState = data.h[i];
+                                let lineClass = edgeState === 1 ? 'bg-black' : 'bg-transparent';
+                                const zIndex = edgeState > 0 ? 'z-20' : 'z-30';
+                                return <div key={`h-${i}`} className={`absolute h-2 w-8 -mt-1 flex justify-center items-center group ${zIndex} ${(!readOnly && (!showResult || showResult === 'error')) ? 'cursor-row-resize pointer-events-auto' : ''}`} style={{ left, top }} onMouseDown={() => onEdgeClick && onEdgeClick('h', i)}><div className={`h-1 w-full transition-colors ${lineClass} ${(!readOnly && edgeState === 0) ? 'group-hover:bg-gray-300' : ''}`}></div></div>;
+                            })}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 3. MAIN APP ---
+
+        const MAX_LEVELS = 30;
+
+        function App() {
+            const [mode, setMode] = useState('analysis');
+            const [currentLevel, setCurrentLevel] = useState(1);
+            const [autoRotate, setAutoRotate] = useState(true);
+            const [checkResult, setCheckResult] = useState(null);
+            const [studentName, setStudentName] = useState('');
+            const [completedLevels, setCompletedLevels] = useState([]);
+            const [showProgressModal, setShowProgressModal] = useState(false);
+            const [progressCode, setProgressCode] = useState('');
+            const [loadCode, setLoadCode] = useState('');
+            const [verifyCode, setVerifyCode] = useState('');
+            const [verifyResult, setVerifyResult] = useState(null);
+            const [synthResolution, setSynthResolution] = useState(4);
+            const [removedVoxels, setRemovedVoxels] = useState(new Set());
+            const [tool, setTool] = useState('cube');
+
+            const activeResolution = mode === 'analysis' ? getLevelResolution(currentLevel) : synthResolution;
+
+            const [userAnalysisGrids, setUserAnalysisGrids] = useState({
+                alzado: createEmptyGridState(getLevelResolution(1)),
+                planta: createEmptyGridState(getLevelResolution(1)),
+                perfil: createEmptyGridState(getLevelResolution(1))
+            });
+
+            const [userSynthesisGrids, setUserSynthesisGrids] = useState({
+                alzado: createEmptyGridState(synthResolution),
+                planta: createEmptyGridState(synthResolution),
+                perfil: createEmptyGridState(synthResolution)
+            });
+
+            useEffect(() => {
+                setUserSynthesisGrids({
+                    alzado: createEmptyGridState(synthResolution),
+                    planta: createEmptyGridState(synthResolution),
+                    perfil: createEmptyGridState(synthResolution)
+                });
+                setRemovedVoxels(new Set());
+            }, [synthResolution]);
+
+            const levelVoxels = useMemo(() => getVoxelData(currentLevel), [currentLevel]);
+            const levelSolution = useMemo(() => calculateSolution(levelVoxels, getLevelResolution(currentLevel)), [levelVoxels, currentLevel]);
+
+            const rawSynthesisVoxels = useMemo(() => {
+                return calculateVoxelsFromViews(
+                    userSynthesisGrids.alzado.cells,
+                    userSynthesisGrids.planta.cells,
+                    userSynthesisGrids.perfil.cells,
+                    synthResolution
+                );
+            }, [userSynthesisGrids, synthResolution]);
+
+            const synthesisVoxels = useMemo(() => {
+                return rawSynthesisVoxels.filter(v => !removedVoxels.has(v.join(',')));
+            }, [rawSynthesisVoxels, removedVoxels]);
+
+            const synthesisValidity = useMemo(() => {
+                if (mode === 'analysis') return null;
+                const res = synthResolution;
+                const numCells = res * res;
+                const supportedAlzado = new Array(numCells).fill(false);
+                const supportedPlanta = new Array(numCells).fill(false);
+                const supportedPerfil = new Array(numCells).fill(false);
+
+                synthesisVoxels.forEach(([x, y, z]) => {
+                    supportedAlzado[(res - 1 - y) * res + x] = true;
+                    supportedPlanta[z * res + x] = true;
+                    supportedPerfil[(res - 1 - y) * res + (res - 1 - z)] = true;
+                });
+
+                return { alzado: supportedAlzado, planta: supportedPlanta, perfil: supportedPerfil };
+            }, [synthesisVoxels, mode, synthResolution]);
+
+            useEffect(() => {
+                const res = getLevelResolution(currentLevel);
+                setUserAnalysisGrids({
+                    alzado: createEmptyGridState(res),
+                    planta: createEmptyGridState(res),
+                    perfil: createEmptyGridState(res)
+                });
+                setCheckResult(null);
+            }, [currentLevel]);
+
+            const handleCellClick = (view, idx, forcedValue) => {
+                if (checkResult === 'success') return;
+                if (checkResult === 'error') setCheckResult(null); 
+
+                const updateGrid = (prev) => {
+                    const viewData = { ...prev[view] };
+                    viewData.cells = [...viewData.cells];
+                    
+                    if (forcedValue !== undefined) {
+                        viewData.cells[idx] = forcedValue;
+                    } else {
+                        const current = viewData.cells[idx];
+                        let next = 0;
+                        if (tool === 'cube') {
+                            next = current === 0 ? 1 : 0;
+                        } else {
+                            if (current < 2) next = 2; else if (current < 5) next = current + 1; else next = 2;
+                        }
+                        viewData.cells[idx] = next;
+                    }
+                    return { ...prev, [view]: viewData };
+                };
+
+                if (mode === 'analysis') setUserAnalysisGrids(prev => updateGrid(prev));
+                else setUserSynthesisGrids(prev => updateGrid(prev));
+            };
+
+            const handleEdgeClick = (view, type, idx) => {
+                if (checkResult === 'success') return;
+                if (checkResult === 'error') setCheckResult(null);
+                const cycleState = (currentState) => currentState === 0 ? 1 : 0;
+                const updateGrid = (prev) => {
+                    const viewData = { ...prev[view] };
+                    if (type === 'v') {
+                        viewData.v = [...viewData.v];
+                        viewData.v[idx] = cycleState(viewData.v[idx]);
+                    } else {
+                        viewData.h = [...viewData.h];
+                        viewData.h[idx] = cycleState(viewData.h[idx]);
+                    }
+                    return { ...prev, [view]: viewData };
+                };
+                if (mode === 'analysis') setUserAnalysisGrids(prev => updateGrid(prev));
+                else setUserSynthesisGrids(prev => updateGrid(prev));
+            };
+
+            const handleVoxelClick = (voxel) => {
+                if (mode === 'synthesis') {
+                    const key = voxel.join(',');
+                    setRemovedVoxels(prev => {
+                        const next = new Set(prev);
+                        next.add(key);
+                        return next;
+                    });
+                }
+            };
+
+            const handleAction = () => {
+                if (mode === 'analysis') {
+                    if (checkResult === 'error') { setCheckResult(null); return; }
+                    const checkView = (user, sol) => {
+                        const userSimple = user.cells.map(c => c > 0 ? 1 : 0);
+                        const solSimple = sol.cells.map(c => c > 0 ? 1 : 0);
+                        const cellsOk = JSON.stringify(userSimple) === JSON.stringify(solSimple);
+                        const vOk = JSON.stringify(user.v) === JSON.stringify(sol.v);
+                        const hOk = JSON.stringify(user.h) === JSON.stringify(sol.h);
+                        return cellsOk && vOk && hOk;
+                    };
+                    const okA = checkView(userAnalysisGrids.alzado, levelSolution.alzado);
+                    const okP = checkView(userAnalysisGrids.planta, levelSolution.planta);
+                    const okS = checkView(userAnalysisGrids.perfil, levelSolution.perfil);
+                    const success = okA && okP && okS;
+                    setCheckResult(success ? 'success' : 'error');
+                    if (success) {
+                        setCompletedLevels(prev => !prev.includes(currentLevel) ? [...prev, currentLevel].sort((a,b)=>a-b) : prev);
+                    }
+                } else {
+                    setUserSynthesisGrids({
+                        alzado: createEmptyGridState(synthResolution),
+                        planta: createEmptyGridState(synthResolution),
+                        perfil: createEmptyGridState(synthResolution)
+                    });
+                    setRemovedVoxels(new Set());
+                }
+            };
+
+            const generateCode = () => {
+                const payload = { n: studentName || "Anonimo", c: completedLevels, d: new Date().toISOString() };
+                setProgressCode(`DIEDRICO-LAB-V1_${btoa(JSON.stringify(payload))}`);
+                setShowProgressModal(true);
+            };
+
+            const handleLoadProgress = () => {
+                if (!loadCode.trim()) return;
+                try {
+                    const raw = loadCode.trim().replace('DIEDRICO-LAB-V1_', '');
+                    const json = atob(raw);
+                    const data = JSON.parse(json);
+                    
+                    if (Array.isArray(data.c)) {
+                        if(data.n) setStudentName(data.n);
+                        setCompletedLevels(data.c);
+                        alert(`¡Progreso cargado con éxito! ${data.c.length} niveles completados.`);
+                        setLoadCode('');
+                    } else {
+                        alert("El código no es válido.");
+                    }
+                } catch (e) {
+                    alert("Error al leer el código. Asegúrate de copiarlo completo.");
+                }
+            };
+
+            const verifyProgressCode = () => {
+                try {
+                    const data = JSON.parse(atob(verifyCode.replace('DIEDRICO-LAB-V1_', '')));
+                    if (data.n && Array.isArray(data.c)) setVerifyResult({ name: data.n, completed: data.c, date: data.d });
+                    else alert("Código inválido: formato incorrecto.");
+                } catch (e) { alert("Código inválido: no se pudo leer."); }
+            };
+
+            const handleExport = async (type) => {
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+                if (type === '3d') {
+                    const canvas = document.querySelector('#canvas-3d canvas');
+                    if (canvas) {
+                        const link = document.createElement('a');
+                        link.download = `diedrico-3d-${timestamp}.png`;
+                        link.href = canvas.toDataURL('image/png');
+                        link.click();
+                    }
+                } else if (type === '2d') {
+                    const element = document.getElementById('plans-capture-area');
+                    if (element) {
+                        const canvas = await html2canvas(element, { backgroundColor: '#FFFFFF', scale: 2 });
+                        const link = document.createElement('a');
+                        link.download = `diedrico-planos-${timestamp}.png`;
+                        link.href = canvas.toDataURL('image/png');
+                        link.click();
+                    }
+                } else {
+                    const element = document.body;
+                    const canvas = await html2canvas(element, { backgroundColor: '#E0E7FF' });
+                    const link = document.createElement('a');
+                    link.download = `diedrico-full-${timestamp}.png`;
+                    link.href = canvas.toDataURL('image/png');
+                    link.click();
+                }
+            };
+
+            const activeVoxels = mode === 'analysis' ? levelVoxels : synthesisVoxels;
+
+            return (
+                <div className="flex flex-col h-screen font-mono text-black bg-[#E0E7FF]">
+                    <header className="flex justify-between items-center p-4 border-b-4 border-black bg-white z-10 shadow-md shrink-0 h-20">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-black text-white p-2"><Grid size={28}/></div>
+                            <div>
+                                <h1 className="text-2xl font-black uppercase leading-none tracking-tight">Diédrico_Lab</h1>
+                                <p className="text-xs font-bold text-gray-500">v10.0 // {mode === 'analysis' ? 'ANALYSIS' : 'CONSTRUCTOR'}_MODE</p>
+                            </div>
+                        </div>
+                        <div className="flex gap-4 items-center">
+                            <div className="flex items-center gap-2 border-b-2 border-black/20 focus-within:border-black px-2">
+                                <User size={16} className="text-gray-500" />
+                                <input type="text" placeholder="Tu Nombre..." value={studentName} onChange={(e) => setStudentName(e.target.value)} className="bg-transparent outline-none text-sm font-bold w-32 placeholder-gray-400" />
+                            </div>
+                            <button onClick={generateCode} className="flex items-center gap-2 px-3 py-1 bg-green-100 border-2 border-black rounded hover:bg-green-200 transition-colors" title="Ver Progreso y Generar Código"><Lock size={16}/> <span className="text-xs font-bold">{completedLevels.length}/{MAX_LEVELS}</span></button>
+                            <div className="h-6 w-px bg-gray-300 mx-2"></div>
+                            <div className="flex gap-1 mr-4">
+                                <button onClick={() => handleExport('3d')} title="Guardar 3D" className="p-2 border-2 border-black rounded hover:bg-gray-100"><Camera size={18}/></button>
+                                <button onClick={() => handleExport('2d')} title="Guardar Planos" className="p-2 border-2 border-black rounded hover:bg-gray-100"><ImageIcon size={18}/></button>
+                                <button onClick={() => handleExport('all')} title="Guardar Ficha Completa" className="p-2 border-2 border-black rounded hover:bg-gray-100"><Download size={18}/></button>
+                            </div>
+                            {mode === 'synthesis' && (
+                                <div className="flex items-center gap-2 bg-purple-100 px-3 py-1 rounded border-2 border-black">
+                                    <span className="text-[10px] font-bold uppercase">Resolución:</span>
+                                    <input type="range" min="3" max="10" value={synthResolution} onChange={(e) => setSynthResolution(parseInt(e.target.value))} className="w-24 accent-black cursor-pointer" />
+                                    <span className="font-black text-sm w-8 text-center">{synthResolution}x{synthResolution}</span>
+                                </div>
+                            )}
+                            <div className="flex gap-2 bg-gray-100 p-1 border-2 border-black rounded-lg">
+                                <button onClick={() => setMode('analysis')} className={`flex items-center gap-2 px-4 py-1 font-bold text-xs rounded border-2 transition-all ${mode === 'analysis' ? 'bg-black text-white border-black' : 'bg-white border-transparent hover:bg-gray-200 text-gray-500'}`}><Eye size={14} /> VER 3D ⮕ DIBUJAR 2D</button>
+                                <button onClick={() => setMode('synthesis')} className={`flex items-center gap-2 px-4 py-1 font-bold text-xs rounded border-2 transition-all ${mode === 'synthesis' ? 'bg-black text-white border-black' : 'bg-white border-transparent hover:bg-gray-200 text-gray-500'}`}><PencilRuler size={14} /> DIBUJAR 2D ⮕ VER 3D</button>
+                            </div>
+                        </div>
+                        <div className={`flex items-center gap-2 bg-[#FFDE00] border-2 border-black p-1 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-opacity ${mode === 'synthesis' ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+                            <button onClick={() => setCurrentLevel(l => Math.max(1, l - 1))} className="p-2 hover:bg-black hover:text-white border-r-2 border-black disabled:opacity-50" disabled={currentLevel === 1}><ChevronLeft size={24} strokeWidth={3}/></button>
+                            <div className="px-4 text-center min-w-[140px]">
+                                <div className="flex items-center justify-center gap-2">
+                                     <span className="block text-[10px] font-bold">NIVEL {String(currentLevel).padStart(2, '0')}</span>
+                                     {completedLevels.includes(currentLevel) && <CheckCircle2 size={12} className="text-green-600 fill-green-100" />}
+                                </div>
+                                <span className="text-xs font-black uppercase tracking-wider block overflow-hidden text-ellipsis whitespace-nowrap max-w-[120px]">{getLevelName(currentLevel)}</span>
+                            </div>
+                            <button onClick={() => setCurrentLevel(l => Math.min(MAX_LEVELS, l + 1))} className="p-2 hover:bg-black hover:text-white border-l-2 border-black disabled:opacity-50" disabled={currentLevel === MAX_LEVELS}><ChevronRight size={24} strokeWidth={3}/></button>
+                        </div>
+                    </header>
+                    <div className="flex flex-1 overflow-hidden">
+                        <div id="canvas-3d" className="w-2/5 relative border-r-4 border-black bg-[#E5E7EB] flex flex-col">
+                            <div className="absolute top-4 left-4 z-10 flex gap-2">
+                                <div className="bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] p-2 flex items-center gap-2 font-bold text-sm"><MousePointer2 size={16} /><span>VISOR 3D</span></div>
+                                <button onClick={() => setAutoRotate(!autoRotate)} className={`border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] p-2 font-bold text-sm flex items-center gap-2 hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all ${autoRotate ? 'bg-green-400' : 'bg-red-400 text-white'}`}>{autoRotate ? <Pause size={16}/> : <Play size={16}/>}</button>
+                            </div>
+                            <VoxelViewer voxels={activeVoxels} autoRotate={autoRotate} onToggleRotate={() => setAutoRotate(!autoRotate)} gridResolution={activeResolution} onVoxelClick={mode === 'synthesis' ? handleVoxelClick : undefined}/>
+                            <div className="bg-white border-t-4 border-black p-4 shrink-0">
+                                <h4 className="font-black mb-2 text-xs uppercase flex gap-2"><Info size={14}/> LEYENDA DE CARAS</h4>
+                                <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase mb-2">
+                                    {[{l:'Planta', c:PALETTE.FACE_TOP}, {l:'Alzado', c:PALETTE.FACE_FRONT}, {l:'P. Derecho', c:PALETTE.FACE_SIDE}, {l:'P. Izq', c:PALETTE.FACE_SIDE_LEFT}, {l:'Atrás', c:PALETTE.FACE_BACK}, {l:'Abajo', c:PALETTE.FACE_BOTTOM}].map((k,i)=>(
+                                        <div key={i} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded border border-gray-300"><div className="w-3 h-3 border border-black" style={{background: k.c}}></div>{k.l}</div>
+                                    ))}
+                                </div>
+                                <div className="text-[10px] text-gray-500 font-medium">{mode === 'synthesis' ? "Tip: Usa la barra de herramientas para cambiar entre Bloques y Triángulos." : "Tip: Selecciona el nivel y completa las vistas."}</div>
+                            </div>
+                        </div>
+                        <div id="grid-container" className="w-3/5 flex flex-col bg-white relative">
+                            <div className="absolute inset-0 pointer-events-none opacity-5" style={{backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
+                            <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center">
+                                <div className={`flex flex-col items-center border-2 border-black p-4 text-xs font-bold text-center max-w-lg mb-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${mode === 'analysis' ? 'bg-yellow-100' : 'bg-blue-100'}`}>
+                                    <div className="mb-2 uppercase text-sm">{mode === 'analysis' ? "Análisis: Dibuja las vistas" : "Constructor: Crea la pieza"}</div>
+                                    
+                                    {/* TOOLBAR */}
+                                    <div className="flex gap-4 mt-2 bg-white/50 p-1 rounded-full border border-black/10">
+                                        <button 
+                                            onClick={() => setTool('cube')}
+                                            className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 transition-all
+                                            ${tool === 'cube' ? 'bg-black text-white border-black scale-105' : 'bg-white border-gray-300 hover:bg-gray-100'}`}
+                                        >
+                                            <Box size={16}/> BLOQUE / BORRAR
+                                        </button>
+                                        <button 
+                                            onClick={() => setTool('triangle')}
+                                            className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 transition-all
+                                            ${tool === 'triangle' ? 'bg-black text-white border-black scale-105' : 'bg-white border-gray-300 hover:bg-gray-100'}`}
+                                        >
+                                            <Triangle size={16}/> PLANOS INCLINADOS
+                                        </button>
+                                    </div>
+                                    <div className="mt-2 text-[10px] opacity-70">
+                                        {tool === 'cube' ? "Clic para poner/quitar cuadrados completos." : "Clic para poner triángulos. Clic repetido para rotar."}
+                                    </div>
+                                </div>
+
+                                <div id="plans-capture-area" className="p-8 bg-white/90 backdrop-blur-sm rounded-xl border border-gray-100">
+                                    <div className="grid grid-cols-2 gap-x-12 gap-y-12">
+                                        <div className="flex justify-center"><ProjectionGrid title="ALZADO (Frente)" color={PALETTE.FACE_FRONT} data={mode === 'analysis' ? userAnalysisGrids.alzado : userSynthesisGrids.alzado} onCellClick={(i, val) => handleCellClick('alzado', i, val)} onEdgeClick={(t, i) => handleEdgeClick('alzado', t, i)} solution={mode === 'analysis' ? levelSolution.alzado : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={mode === 'synthesis' ? synthesisValidity?.alzado : undefined} resolution={activeResolution} tool={tool}/></div>
+                                        <div className="flex justify-center"><ProjectionGrid title="PERFIL (Derecho)" color={PALETTE.FACE_SIDE} data={mode === 'analysis' ? userAnalysisGrids.perfil : userSynthesisGrids.perfil} onCellClick={(i, val) => handleCellClick('perfil', i, val)} onEdgeClick={(t, i) => handleEdgeClick('perfil', t, i)} solution={mode === 'analysis' ? levelSolution.perfil : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={mode === 'synthesis' ? synthesisValidity?.perfil : undefined} resolution={activeResolution} tool={tool}/></div>
+                                        <div className="flex justify-center"><ProjectionGrid title="PLANTA (Arriba)" color={PALETTE.FACE_TOP} data={mode === 'analysis' ? userAnalysisGrids.planta : userSynthesisGrids.planta} onCellClick={(i, val) => handleCellClick('planta', i, val)} onEdgeClick={(t, i) => handleEdgeClick('planta', t, i)} solution={mode === 'analysis' ? levelSolution.planta : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={mode === 'synthesis' ? synthesisValidity?.planta : undefined} resolution={activeResolution} tool={tool}/></div>
+                                        <div></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="h-20 border-t-4 border-black bg-gray-50 flex items-center justify-center shrink-0 p-4 gap-4 z-20">
+                                 {mode === 'analysis' ? (
+                                    <>
+                                        <button onClick={handleAction} className={`w-64 py-3 px-4 font-black border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2 text-sm ${checkResult === 'success' ? 'bg-green-500 text-white' : checkResult === 'error' ? 'bg-white text-black hover:bg-gray-100' : 'bg-[#FFDE00] hover:bg-[#FFE55C]'}`}>
+                                            {checkResult === 'success' ? <><CheckCircle2 size={18}/> CORRECTO</> : checkResult === 'error' ? <><Edit3 size={18}/> SEGUIR EDITANDO</> : <><CheckCircle2 size={18}/> COMPROBAR</>}
+                                        </button>
+                                        {checkResult === 'success' && <div className="animate-success"><span className="text-[10px] font-bold bg-green-100 text-green-800 px-3 py-2 rounded border border-green-200 uppercase">¡Nivel Completado!</span></div>}
+                                        {checkResult === 'error' && <div className="animate-pulse"><span className="text-[10px] font-bold bg-red-100 text-red-800 px-3 py-2 rounded border border-red-200 uppercase">Revisar Fallos</span></div>}
+                                    </>
+                                ) : (
+                                    <button onClick={handleAction} className="w-64 py-3 px-4 font-black border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-red-100 hover:bg-red-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2 text-sm"><RefreshCw size={18}/> BORRAR TODO</button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    {showProgressModal && (
+                        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                            <div className="bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] w-full max-w-2xl p-6 relative flex flex-col gap-6 max-h-[90vh] overflow-y-auto">
+                                <button onClick={() => setShowProgressModal(false)} className="absolute top-4 right-4 p-1 hover:bg-gray-100 border border-black"><span className="font-black text-xl leading-none">×</span></button>
+                                <h2 className="text-2xl font-black uppercase border-b-4 border-black pb-2">Registro de Progreso</h2>
+                                <div className="bg-blue-50 border-2 border-blue-200 p-4">
+                                    <h3 className="font-bold text-lg mb-2 flex items-center gap-2"><User size={20}/> Para el Alumno</h3>
+                                    <p className="text-sm mb-4">{studentName ? `Alumno: ${studentName}` : 'Nombre no introducido'} <br/> Niveles Completados: {completedLevels.length} / {MAX_LEVELS}</p>
+                                    <label className="text-xs font-bold uppercase block mb-1">Copia este código y envíalo a tu profesor:</label>
+                                    <div className="flex gap-2">
+                                        <textarea readOnly value={progressCode} className="w-full h-24 p-2 text-xs font-mono border-2 border-black resize-none bg-white"/>
+                                        <button onClick={() => navigator.clipboard.writeText(progressCode)} className="px-4 bg-black text-white font-bold border-2 border-black hover:bg-gray-800 flex flex-col items-center justify-center gap-1"><Clipboard size={16}/> COPIAR</button>
+                                    </div>
+                                    <div className="mt-4 border-t-2 border-blue-200 pt-4">
+                                        <label className="text-xs font-bold uppercase block mb-1">¿Ya tienes un código? Cárgalo aquí:</label>
+                                        <div className="flex gap-2">
+                                            <input type="text" value={loadCode} onChange={(e) => setLoadCode(e.target.value)} placeholder="Pegar código DIEDRICO-LAB-V1_..." className="flex-1 p-2 border-2 border-black text-xs font-mono"/>
+                                            <button onClick={handleLoadProgress} className="px-4 bg-white text-black font-bold border-2 border-black hover:bg-gray-100 flex items-center gap-1"><Upload size={16}/> CARGAR</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-yellow-50 border-2 border-yellow-200 p-4">
+                                    <h3 className="font-bold text-lg mb-2 flex items-center gap-2"><Unlock size={20}/> Para el Profesor (Verificador)</h3>
+                                    <p className="text-xs mb-2 text-gray-600">Pega aquí el código que te ha enviado el alumno para ver su progreso.</p>
+                                    <div className="flex gap-2 mb-4">
+                                        <input type="text" value={verifyCode} onChange={(e) => setVerifyCode(e.target.value)} placeholder="Pegar código DIEDRICO-LAB-V1_..." className="flex-1 p-2 border-2 border-black text-xs font-mono"/>
+                                        <button onClick={verifyProgressCode} className="px-4 bg-[#FFDE00] font-bold border-2 border-black hover:bg-[#FFE55C]">VERIFICAR</button>
+                                    </div>
+                                    {verifyResult && (
+                                        <div className="bg-white border-2 border-black p-4 animate-success">
+                                            <div className="flex justify-between items-start mb-2 border-b border-gray-200 pb-2"><div><span className="block text-xs text-gray-500 uppercase">Alumno</span><span className="font-black text-lg">{verifyResult.name}</span></div><div className="text-right"><span className="block text-xs text-gray-500 uppercase">Fecha</span><span className="font-bold text-sm">{new Date(verifyResult.date).toLocaleDateString()}</span></div></div>
+                                            <div className="mb-2"><span className="text-xs font-bold uppercase mr-2">Progreso Total:</span><span className="text-xl font-black text-green-600">{verifyResult.completed.length} / {MAX_LEVELS}</span></div>
+                                            <div><span className="text-xs font-bold uppercase block mb-1">Niveles Completados:</span><div className="flex flex-wrap gap-1">{verifyResult.completed.map(l => (<span key={l} className="text-xs bg-green-100 text-green-800 border border-green-200 px-1.5 py-0.5 rounded font-mono">{l}</span>))}{verifyResult.completed.length === 0 && <span className="text-xs text-gray-400 italic">Ninguno</span>}</div></div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
