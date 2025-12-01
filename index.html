@@ -35,9 +35,9 @@
     "three/examples/jsm/controls/OrbitControls.js": "https://esm.sh/three@0.160.0/examples/jsm/controls/OrbitControls.js?deps=three@0.160.0",
     "three/examples/jsm/utils/BufferGeometryUtils.js": "https://esm.sh/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js?deps=three@0.160.0",
     "html2canvas": "https://esm.sh/html2canvas@1.4.1",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "three/": "https://aistudiocdn.com/three@^0.181.2/"
+    "three/": "https://aistudiocdn.com/three@^0.181.2/",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
   }
 }
 </script>
@@ -48,7 +48,7 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useRef, useMemo } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Grid, ChevronLeft, ChevronRight, MousePointer2, Pause, Play, Info, CheckCircle2, RefreshCw, PencilRuler, Eye, Edit3, Camera, Download, Image as ImageIcon, Eraser, User, Clipboard, Lock, Unlock, Box, Triangle, Upload, X } from 'lucide-react';
+        import { Grid, ChevronLeft, ChevronRight, MousePointer2, Pause, Play, Info, CheckCircle2, RefreshCw, PencilRuler, Eye, Edit3, Camera, Download, Image as ImageIcon, Eraser, User, Clipboard, Lock, Unlock, Box, Triangle, Upload, X, LocateFixed, Code, Copy } from 'lucide-react';
         import * as THREE from 'three';
         import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
         import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -186,36 +186,32 @@
         };
 
         const createWedgeGeometry = (shapeType, axis) => {
-            const buildWedge = (p0, p1, p2) => {
-                const v3 = (p, d) => {
-                    // Center coordinates: 0..1 -> -0.5..0.5
-                    if (axis === 'z') return [p[0] - 0.5, p[1] - 0.5, d - 0.5];
-                    return [d - 0.5, p[1] - 0.5, 0.5 - p[0]]; 
-                }
-                const pts = [];
-                const addTri = (a, b, c) => pts.push(...a.map(v=>v*U), ...b.map(v=>v*U), ...c.map(v=>v*U));
-                const addQuad = (a, b, c, d) => { addTri(a,b,c); addTri(a,c,d); }
-                
-                let p0n, p1n, p2n;
-                if (shapeType === 2) { p0n=[0,0]; p1n=[1,0]; p2n=[0,1]; }
-                else if (shapeType === 3) { p0n=[0,0]; p1n=[1,0]; p2n=[1,1]; }
-                else if (shapeType === 4) { p0n=[1,0]; p1n=[1,1]; p2n=[0,1]; }
-                else { p0n=[0,0]; p1n=[1,1]; p2n=[0,1]; }
+            const v3 = (p, d) => {
+                // Center coordinates: 0..1 -> -0.5..0.5
+                if (axis === 'z') return [p[0] - 0.5, p[1] - 0.5, d - 0.5];
+                return [d - 0.5, p[1] - 0.5, 0.5 - p[0]]; 
+            }
+            const pts = [];
+            const addTri = (a, b, c) => pts.push(...a.map(v=>v*U), ...b.map(v=>v*U), ...c.map(v=>v*U));
+            const addQuad = (a, b, c, d) => { addTri(a,b,c); addTri(a,c,d); }
+            
+            // Normalized triangle coords [0,0] to [1,1]
+            let p0n, p1n, p2n;
+            if (shapeType === 2) { p0n=[0,0]; p1n=[1,0]; p2n=[0,1]; }
+            else if (shapeType === 3) { p0n=[0,0]; p1n=[1,0]; p2n=[1,1]; }
+            else if (shapeType === 4) { p0n=[1,0]; p1n=[1,1]; p2n=[0,1]; }
+            else { p0n=[0,0]; p1n=[1,1]; p2n=[0,1]; }
 
-                const A0 = v3(p0n, 0), B0 = v3(p1n, 0), C0 = v3(p2n, 0);
-                const A1 = v3(p0n, 1), B1 = v3(p1n, 1), C1 = v3(p2n, 1);
-                addTri(A0, C0, B0); addTri(A1, B1, C1);
-                addQuad(A0, B0, B1, A1); addQuad(B0, C0, C1, B1); addQuad(C0, A0, A1, C1);
-                
-                const buffer = new THREE.BufferGeometry();
-                buffer.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-                return buffer;
-            };
-            if (shapeType === 2) return buildWedge([0,0], [1,0], [0,1]);
-            if (shapeType === 3) return buildWedge([0,0], [1,0], [1,1]);
-            if (shapeType === 4) return buildWedge([1,0], [1,1], [0,1]);
-            if (shapeType === 5) return buildWedge([0,0], [1,1], [0,1]);
-            return new THREE.BoxGeometry(U,U,U);
+            const A0 = v3(p0n, 0), B0 = v3(p1n, 0), C0 = v3(p2n, 0);
+            const A1 = v3(p0n, 1), B1 = v3(p1n, 1), C1 = v3(p2n, 1);
+            addTri(A0, C0, B0); // Front 
+            addTri(A1, B1, C1); // Back
+            addQuad(A0, B0, B1, A1); // Side 1
+            addQuad(B0, C0, C1, B1); // Side 2
+            addQuad(C0, A0, A1, C1); // Side 3
+            const buffer = new THREE.BufferGeometry();
+            buffer.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+            return buffer;
         };
 
         const generateVoxelMesh = (voxels, res) => {
@@ -225,16 +221,19 @@
 
             voxels.forEach(([x, y, z, type]) => {
                 let geo;
+                // Ensure all geometries are non-indexed for merging
                 if (!type || type === 1) {
-                    geo = new THREE.BoxGeometry(U, U, U).toNonIndexed();
-                    geo.deleteAttribute('normal'); geo.deleteAttribute('uv');
+                    geo = new THREE.BoxGeometry(U, U, U).toNonIndexed(); 
+                    if (geo.getAttribute('normal')) geo.deleteAttribute('normal'); 
+                    if (geo.getAttribute('uv')) geo.deleteAttribute('uv');
                 } else if (type >= 12 && type <= 15) {
-                    geo = createWedgeGeometry(type - 10, 'z');
+                     geo = createWedgeGeometry(type - 10, 'z');
                 } else if (type >= 22 && type <= 25) {
-                    geo = createWedgeGeometry(type - 20, 'x'); 
+                     geo = createWedgeGeometry(type - 20, 'x'); 
                 } else {
-                    geo = new THREE.BoxGeometry(U, U, U).toNonIndexed();
-                    geo.deleteAttribute('normal'); geo.deleteAttribute('uv');
+                     geo = new THREE.BoxGeometry(U, U, U).toNonIndexed();
+                     if (geo.getAttribute('normal')) geo.deleteAttribute('normal');
+                     if (geo.getAttribute('uv')) geo.deleteAttribute('uv');
                 }
                 geo.translate(x * U - center.x, y * U - center.y, z * U - center.z);
                 geometries.push(geo);
@@ -242,6 +241,8 @@
 
             if(geometries.length === 0) return null;
             let mergedGeo = BufferGeometryUtils.mergeGeometries(geometries);
+            // REMOVED mergeVertices to keep blocky look and solid face colors (prevent rainbow gradients)
+            // mergedGeo = BufferGeometryUtils.mergeVertices(mergedGeo); 
             mergedGeo.computeVertexNormals();
 
             const colors = [];
@@ -253,16 +254,22 @@
             for (let i = 0; i < count; i++) {
                 _normal.fromBufferAttribute(normal, i);
                 let colorHex = PALETTE.FACE_FRONT;
+                
+                // Strict face coloring logic to match legend, including slopes
+                // Use threshold 0.5 to catch both flat faces (1.0) and slopes (~0.7)
+                // Priorities: Vertical (Top/Bottom) > Depth (Front/Back) > Horizontal (Sides)
                 if (_normal.y > 0.5) colorHex = PALETTE.FACE_TOP;
                 else if (_normal.y < -0.5) colorHex = PALETTE.FACE_BOTTOM;
                 else if (_normal.z > 0.5) colorHex = PALETTE.FACE_FRONT;
                 else if (_normal.z < -0.5) colorHex = PALETTE.FACE_BACK;
                 else if (_normal.x > 0.5) colorHex = PALETTE.FACE_SIDE;
                 else if (_normal.x < -0.5) colorHex = PALETTE.FACE_SIDE_LEFT;
+
                 const c = new THREE.Color(colorHex);
                 colors.push(c.r, c.g, c.b);
             }
             mergedGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
             const material = new THREE.MeshBasicMaterial({ vertexColors: true });
             const mesh = new THREE.Mesh(mergedGeo, material);
             const edges = new THREE.EdgesGeometry(mergedGeo, 1);
@@ -420,7 +427,31 @@
                 if (controlsRef.current) controlsRef.current.autoRotate = autoRotate;
             }, [autoRotate]);
 
-            return <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />;
+            const setView = (type) => {
+                if (!cameraRef.current || !controlsRef.current) return;
+                const dist = 150;
+                cameraRef.current.up.set(0, 1, 0); 
+                switch(type) {
+                    case 'iso': cameraRef.current.position.set(100, 81.6, 100); break;
+                    case 'front': cameraRef.current.position.set(0, 0, 200); break;
+                    case 'top': cameraRef.current.position.set(0, 200, 0); cameraRef.current.up.set(0, 0, -1); break;
+                    case 'side': cameraRef.current.position.set(200, 0, 0); break;
+                }
+                cameraRef.current.lookAt(0,0,0);
+                controlsRef.current.update();
+            };
+
+            return (
+                <div className="relative w-full h-full">
+                    <div ref={mountRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+                    <div className="absolute top-14 left-4 z-10 flex flex-col gap-1">
+                        <button onClick={() => setView('iso')} className="bg-gray-100 hover:bg-gray-200 border-2 border-black p-1 text-[10px] font-bold shadow-sm" title="Isométrico">ISO</button>
+                        <button onClick={() => setView('front')} className="hover:opacity-80 border-2 border-black p-1 text-[10px] font-bold shadow-sm text-white" style={{background: PALETTE.FACE_FRONT}} title="Alzado">ALZ</button>
+                        <button onClick={() => setView('side')} className="hover:opacity-80 border-2 border-black p-1 text-[10px] font-bold shadow-sm text-black" style={{background: PALETTE.FACE_SIDE}} title="Perfil">PER</button>
+                        <button onClick={() => setView('top')} className="hover:opacity-80 border-2 border-black p-1 text-[10px] font-bold shadow-sm text-black" style={{background: PALETTE.FACE_TOP}} title="Planta">PLA</button>
+                    </div>
+                </div>
+            );
         };
 
         const ProjectionGrid = ({ title, color, data, onCellClick, onEdgeClick, solution, showResult, readOnly = false, mode, validityMask, resolution, tool = 'cube' }) => {
@@ -482,7 +513,7 @@
                                     if (userFilled !== solFilled) { isError = true; cellColor = '#FCA5A5'; } 
                                     else if (userFilled) { cellColor = PALETTE.SUCCESS; }
                                 }
-                                const isInvalid = mode === 'synthesis' && activeType > 0 && validityMask && !validityMask[i];
+                                const isInvalid = (mode === 'synthesis' || mode === 'editor') && activeType > 0 && validityMask && !validityMask[i];
                                 return (
                                     <div key={i} onMouseDown={() => handleMouseDown(i)} onMouseEnter={() => handleMouseEnter(i)} className={`w-8 h-8 ${border} ${readOnly ? '' : 'cursor-pointer'} relative select-none flex items-center justify-center bg-transparent`} style={{ backgroundImage: isInvalid ? 'repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px)' : 'none' }}>
                                         {renderCellContent(activeType, isError ? '#FCA5A5' : cellColor)}
@@ -524,7 +555,7 @@
         const MAX_LEVELS = 30;
 
         function App() {
-            const [mode, setMode] = useState('analysis');
+            const [mode, setMode] = useState('analysis'); // 'analysis' | 'synthesis' | 'editor'
             const [currentLevel, setCurrentLevel] = useState(1);
             const [autoRotate, setAutoRotate] = useState(true);
             const [checkResult, setCheckResult] = useState(null);
@@ -538,8 +569,9 @@
             const [synthResolution, setSynthResolution] = useState(4);
             const [removedVoxels, setRemovedVoxels] = useState(new Set());
             const [tool, setTool] = useState('cube');
+            const [editorCode, setEditorCode] = useState(null); // For level export
 
-            const activeResolution = mode === 'analysis' ? getLevelResolution(currentLevel) : synthResolution;
+            const activeResolution = (mode === 'synthesis' || mode === 'editor') ? synthResolution : getLevelResolution(currentLevel);
 
             const [userAnalysisGrids, setUserAnalysisGrids] = useState({
                 alzado: createEmptyGridState(getLevelResolution(1)),
@@ -652,7 +684,7 @@
             };
 
             const handleVoxelClick = (voxel) => {
-                if (mode === 'synthesis') {
+                if (mode === 'synthesis' || mode === 'editor') {
                     const key = voxel.join(',');
                     setRemovedVoxels(prev => {
                         const next = new Set(prev);
@@ -689,6 +721,20 @@
                     });
                     setRemovedVoxels(new Set());
                 }
+            };
+
+            const handleLevelExport = () => {
+                let code = "";
+                const sortedVoxels = [...synthesisVoxels].sort((a, b) => {
+                    if (a[1] !== b[1]) return a[1] - b[1]; 
+                    if (a[0] !== b[0]) return a[0] - b[0]; 
+                    return a[2] - b[2]; 
+                });
+
+                sortedVoxels.forEach(v => {
+                    code += `addBox(${v[0]},${v[1]},${v[2]}, 1,1,1); `;
+                });
+                setEditorCode(code);
             };
 
             const generateCode = () => {
@@ -763,7 +809,7 @@
                             <div className="bg-black text-white p-2"><Grid size={28}/></div>
                             <div>
                                 <h1 className="text-2xl font-black uppercase leading-none tracking-tight">Diédrico_Lab</h1>
-                                <p className="text-xs font-bold text-gray-500">v9.5 // {mode === 'analysis' ? 'ANALYSIS' : 'CONSTRUCTOR'}_MODE</p>
+                                <p className="text-xs font-bold text-gray-500">v11.0 // {mode === 'analysis' ? 'ANALYSIS' : (mode === 'editor' ? 'LEVEL_EDITOR' : 'CONSTRUCTOR')}</p>
                             </div>
                         </div>
                         <div className="flex gap-4 items-center">
@@ -778,7 +824,7 @@
                                 <button onClick={() => handleExport('2d')} title="Guardar Planos" className="p-2 border-2 border-black rounded hover:bg-gray-100"><ImageIcon size={18}/></button>
                                 <button onClick={() => handleExport('all')} title="Guardar Ficha Completa" className="p-2 border-2 border-black rounded hover:bg-gray-100"><Download size={18}/></button>
                             </div>
-                            {mode === 'synthesis' && (
+                            {(mode === 'synthesis' || mode === 'editor') && (
                                 <div className="flex items-center gap-2 bg-purple-100 px-3 py-1 rounded border-2 border-black">
                                     <span className="text-[10px] font-bold uppercase">Resolución:</span>
                                     <input type="range" min="3" max="10" value={synthResolution} onChange={(e) => setSynthResolution(parseInt(e.target.value))} className="w-24 accent-black cursor-pointer" />
@@ -786,11 +832,12 @@
                                 </div>
                             )}
                             <div className="flex gap-2 bg-gray-100 p-1 border-2 border-black rounded-lg">
-                                <button onClick={() => setMode('analysis')} className={`flex items-center gap-2 px-4 py-1 font-bold text-xs rounded border-2 transition-all ${mode === 'analysis' ? 'bg-black text-white border-black' : 'bg-white border-transparent hover:bg-gray-200 text-gray-500'}`}><Eye size={14} /> VER 3D ⮕ DIBUJAR 2D</button>
-                                <button onClick={() => setMode('synthesis')} className={`flex items-center gap-2 px-4 py-1 font-bold text-xs rounded border-2 transition-all ${mode === 'synthesis' ? 'bg-black text-white border-black' : 'bg-white border-transparent hover:bg-gray-200 text-gray-500'}`}><PencilRuler size={14} /> DIBUJAR 2D ⮕ VER 3D</button>
+                                <button onClick={() => setMode('analysis')} className={`flex items-center gap-2 px-4 py-1 font-bold text-xs rounded border-2 transition-all ${mode === 'analysis' ? 'bg-black text-white border-black' : 'bg-white border-transparent hover:bg-gray-200 text-gray-500'}`}><Eye size={14} /> JUGAR</button>
+                                <button onClick={() => setMode('synthesis')} className={`flex items-center gap-2 px-4 py-1 font-bold text-xs rounded border-2 transition-all ${mode === 'synthesis' ? 'bg-black text-white border-black' : 'bg-white border-transparent hover:bg-gray-200 text-gray-500'}`}><PencilRuler size={14} /> DIBUJAR</button>
+                                <button onClick={() => setMode('editor')} className={`flex items-center gap-2 px-4 py-1 font-bold text-xs rounded border-2 transition-all ${mode === 'editor' ? 'bg-black text-white border-black' : 'bg-white border-transparent hover:bg-gray-200 text-gray-500'}`}><Code size={14} /> EDITOR</button>
                             </div>
                         </div>
-                        <div className={`flex items-center gap-2 bg-[#FFDE00] border-2 border-black p-1 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-opacity ${mode === 'synthesis' ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+                        <div className={`flex items-center gap-2 bg-[#FFDE00] border-2 border-black p-1 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-opacity ${mode === 'analysis' ? 'opacity-100' : 'opacity-0 pointer-events-none hidden'}`}>
                             <button onClick={() => setCurrentLevel(l => Math.max(1, l - 1))} className="p-2 hover:bg-black hover:text-white border-r-2 border-black disabled:opacity-50" disabled={currentLevel === 1}><ChevronLeft size={24} strokeWidth={3}/></button>
                             <div className="px-4 text-center min-w-[140px]">
                                 <div className="flex items-center justify-center gap-2">
@@ -808,7 +855,7 @@
                                 <div className="bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] p-2 flex items-center gap-2 font-bold text-sm"><MousePointer2 size={16} /><span>VISOR 3D</span></div>
                                 <button onClick={() => setAutoRotate(!autoRotate)} className={`border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] p-2 font-bold text-sm flex items-center gap-2 hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all ${autoRotate ? 'bg-green-400' : 'bg-red-400 text-white'}`}>{autoRotate ? <Pause size={16}/> : <Play size={16}/>}</button>
                             </div>
-                            <VoxelViewer voxels={activeVoxels} autoRotate={autoRotate} onToggleRotate={() => setAutoRotate(!autoRotate)} gridResolution={activeResolution} onVoxelClick={mode === 'synthesis' ? handleVoxelClick : undefined}/>
+                            <VoxelViewer voxels={activeVoxels} autoRotate={autoRotate} onToggleRotate={() => setAutoRotate(!autoRotate)} gridResolution={activeResolution} onVoxelClick={(mode === 'synthesis' || mode === 'editor') ? handleVoxelClick : undefined}/>
                             <div className="bg-white border-t-4 border-black p-4 shrink-0">
                                 <h4 className="font-black mb-2 text-xs uppercase flex gap-2"><Info size={14}/> LEYENDA DE CARAS</h4>
                                 <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase mb-2">
@@ -816,42 +863,50 @@
                                         <div key={i} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded border border-gray-300"><div className="w-3 h-3 border border-black" style={{background: k.c}}></div>{k.l}</div>
                                     ))}
                                 </div>
-                                <div className="text-[10px] text-gray-500 font-medium">{mode === 'synthesis' ? "Tip: Usa la barra de herramientas para cambiar entre Bloques y Triángulos." : "Tip: Selecciona el nivel y completa las vistas."}</div>
+                                <div className="text-[10px] text-gray-500 font-medium">
+                                    {mode === 'analysis' ? "Tip: Selecciona el nivel y completa las vistas." : "Tip: Usa la barra de herramientas. Shift+Clic en 3D para borrar bloques."}
+                                </div>
                             </div>
                         </div>
                         <div id="grid-container" className="w-3/5 flex flex-col bg-white relative">
                             <div className="absolute inset-0 pointer-events-none opacity-5" style={{backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
                             <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center">
-                                <div className={`flex flex-col items-center border-2 border-black p-4 text-xs font-bold text-center max-w-lg mb-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${mode === 'analysis' ? 'bg-yellow-100' : 'bg-blue-100'}`}>
-                                    <div className="mb-2 uppercase text-sm">{mode === 'analysis' ? "Análisis: Dibuja las vistas" : "Constructor: Crea la pieza"}</div>
+                                <div className={`flex flex-col items-center border-2 border-black p-4 text-xs font-bold text-center max-w-lg mb-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] ${mode === 'analysis' ? 'bg-yellow-100' : (mode === 'editor' ? 'bg-red-100' : 'bg-blue-100')}`}>
+                                    <div className="mb-2 uppercase text-sm">
+                                        {mode === 'analysis' ? "Análisis: Dibuja las vistas" : (mode === 'editor' ? "EDITOR DE NIVELES" : "Constructor: Crea la pieza")}
+                                    </div>
                                     
-                                    {/* TOOLBAR */}
-                                    <div className="flex gap-4 mt-2 bg-white/50 p-1 rounded-full border border-black/10">
-                                        <button 
-                                            onClick={() => setTool('cube')}
-                                            className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 transition-all
-                                            ${tool === 'cube' ? 'bg-black text-white border-black scale-105' : 'bg-white border-gray-300 hover:bg-gray-100'}`}
-                                        >
-                                            <Box size={16}/> BLOQUE / BORRAR
-                                        </button>
-                                        <button 
-                                            onClick={() => setTool('triangle')}
-                                            className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 transition-all
-                                            ${tool === 'triangle' ? 'bg-black text-white border-black scale-105' : 'bg-white border-gray-300 hover:bg-gray-100'}`}
-                                        >
-                                            <Triangle size={16}/> PLANOS INCLINADOS
-                                        </button>
-                                    </div>
-                                    <div className="mt-2 text-[10px] opacity-70">
-                                        {tool === 'cube' ? "Clic para poner/quitar cuadrados completos." : "Clic para poner triángulos. Clic repetido para rotar."}
-                                    </div>
+                                    {/* TOOLBAR: VISIBLE IN SYNTHESIS AND EDITOR */}
+                                    {(mode === 'synthesis' || mode === 'editor') && (
+                                        <>
+                                            <div className="flex gap-4 mt-2 bg-white/50 p-1 rounded-full border border-black/10">
+                                                <button 
+                                                    onClick={() => setTool('cube')}
+                                                    className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 transition-all
+                                                    ${tool === 'cube' ? 'bg-black text-white border-black scale-105' : 'bg-white border-gray-300 hover:bg-gray-100'}`}
+                                                >
+                                                    <Box size={16}/> BLOQUE / BORRAR
+                                                </button>
+                                                <button 
+                                                    onClick={() => setTool('triangle')}
+                                                    className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 transition-all
+                                                    ${tool === 'triangle' ? 'bg-black text-white border-black scale-105' : 'bg-white border-gray-300 hover:bg-gray-100'}`}
+                                                >
+                                                    <Triangle size={16}/> PLANOS INCLINADOS
+                                                </button>
+                                            </div>
+                                            <div className="mt-2 text-[10px] opacity-70">
+                                                {tool === 'cube' ? "Clic para poner/quitar cuadrados completos." : "Clic para poner triángulos. Clic repetido para rotar."}
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
 
                                 <div id="plans-capture-area" className="p-8 bg-white/90 backdrop-blur-sm rounded-xl border border-gray-100">
                                     <div className="grid grid-cols-2 gap-x-12 gap-y-12">
-                                        <div className="flex justify-center"><ProjectionGrid title="ALZADO (Frente)" color={PALETTE.FACE_FRONT} data={mode === 'analysis' ? userAnalysisGrids.alzado : userSynthesisGrids.alzado} onCellClick={(i, val) => handleCellClick('alzado', i, val)} onEdgeClick={(t, i) => handleEdgeClick('alzado', t, i)} solution={mode === 'analysis' ? levelSolution.alzado : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={mode === 'synthesis' ? synthesisValidity?.alzado : undefined} resolution={activeResolution} tool={tool}/></div>
-                                        <div className="flex justify-center"><ProjectionGrid title="PERFIL (Derecho)" color={PALETTE.FACE_SIDE} data={mode === 'analysis' ? userAnalysisGrids.perfil : userSynthesisGrids.perfil} onCellClick={(i, val) => handleCellClick('perfil', i, val)} onEdgeClick={(t, i) => handleEdgeClick('perfil', t, i)} solution={mode === 'analysis' ? levelSolution.perfil : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={mode === 'synthesis' ? synthesisValidity?.perfil : undefined} resolution={activeResolution} tool={tool}/></div>
-                                        <div className="flex justify-center"><ProjectionGrid title="PLANTA (Arriba)" color={PALETTE.FACE_TOP} data={mode === 'analysis' ? userAnalysisGrids.planta : userSynthesisGrids.planta} onCellClick={(i, val) => handleCellClick('planta', i, val)} onEdgeClick={(t, i) => handleEdgeClick('planta', t, i)} solution={mode === 'analysis' ? levelSolution.planta : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={mode === 'synthesis' ? synthesisValidity?.planta : undefined} resolution={activeResolution} tool={tool}/></div>
+                                        <div className="flex justify-center"><ProjectionGrid title="ALZADO (Frente)" color={PALETTE.FACE_FRONT} data={mode === 'analysis' ? userAnalysisGrids.alzado : userSynthesisGrids.alzado} onCellClick={(i, val) => handleCellClick('alzado', i, val)} onEdgeClick={(t, i) => handleEdgeClick('alzado', t, i)} solution={mode === 'analysis' ? levelSolution.alzado : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={(mode === 'synthesis' || mode === 'editor') ? synthesisValidity?.alzado : undefined} resolution={activeResolution} tool={tool}/></div>
+                                        <div className="flex justify-center"><ProjectionGrid title="PERFIL (Derecho)" color={PALETTE.FACE_SIDE} data={mode === 'analysis' ? userAnalysisGrids.perfil : userSynthesisGrids.perfil} onCellClick={(i, val) => handleCellClick('perfil', i, val)} onEdgeClick={(t, i) => handleEdgeClick('perfil', t, i)} solution={mode === 'analysis' ? levelSolution.perfil : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={(mode === 'synthesis' || mode === 'editor') ? synthesisValidity?.perfil : undefined} resolution={activeResolution} tool={tool}/></div>
+                                        <div className="flex justify-center"><ProjectionGrid title="PLANTA (Arriba)" color={PALETTE.FACE_TOP} data={mode === 'analysis' ? userAnalysisGrids.planta : userSynthesisGrids.planta} onCellClick={(i, val) => handleCellClick('planta', i, val)} onEdgeClick={(t, i) => handleEdgeClick('planta', t, i)} solution={mode === 'analysis' ? levelSolution.planta : undefined} showResult={mode === 'analysis' ? checkResult : null} mode={mode} validityMask={(mode === 'synthesis' || mode === 'editor') ? synthesisValidity?.planta : undefined} resolution={activeResolution} tool={tool}/></div>
                                         <div></div>
                                     </div>
                                 </div>
@@ -865,12 +920,31 @@
                                         {checkResult === 'success' && <div className="animate-success"><span className="text-[10px] font-bold bg-green-100 text-green-800 px-3 py-2 rounded border border-green-200 uppercase">¡Nivel Completado!</span></div>}
                                         {checkResult === 'error' && <div className="animate-pulse"><span className="text-[10px] font-bold bg-red-100 text-red-800 px-3 py-2 rounded border border-red-200 uppercase">Revisar Fallos</span></div>}
                                     </>
+                                ) : mode === 'editor' ? (
+                                    <div className="flex gap-4">
+                                        <button onClick={handleAction} className="w-48 py-3 px-4 font-black border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-white hover:bg-gray-100 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2 text-sm"><RefreshCw size={18}/> LIMPIAR</button>
+                                        <button onClick={handleLevelExport} className="w-64 py-3 px-4 font-black border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-purple-200 hover:bg-purple-300 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2 text-sm"><Code size={18}/> EXPORTAR CÓDIGO</button>
+                                    </div>
                                 ) : (
                                     <button onClick={handleAction} className="w-64 py-3 px-4 font-black border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-red-100 hover:bg-red-200 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2 text-sm"><RefreshCw size={18}/> BORRAR TODO</button>
                                 )}
                             </div>
                         </div>
                     </div>
+                    
+                    {/* LEVEL EXPORT MODAL */}
+                    {editorCode && (
+                        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                            <div className="bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] w-full max-w-xl p-6 relative flex flex-col gap-4">
+                                <button onClick={() => setEditorCode(null)} className="absolute top-4 right-4 p-1 hover:bg-gray-100 border border-black"><X size={20}/></button>
+                                <h2 className="text-xl font-black uppercase">Código del Nivel</h2>
+                                <p className="text-xs text-gray-600">Copia este código y envíaselo al desarrollador para actualizar el nivel.</p>
+                                <textarea readOnly value={editorCode} className="w-full h-32 p-2 text-xs font-mono border-2 border-black bg-gray-50 resize-none"/>
+                                <button onClick={() => navigator.clipboard.writeText(editorCode)} className="px-4 py-2 bg-black text-white font-bold border-2 border-black hover:bg-gray-800 flex items-center justify-center gap-2"><Copy size={16}/> COPIAR AL PORTAPAPELES</button>
+                            </div>
+                        </div>
+                    )}
+
                     {showProgressModal && (
                         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                             <div className="bg-white border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] w-full max-w-2xl p-6 relative flex flex-col gap-6 max-h-[90vh] overflow-y-auto">
